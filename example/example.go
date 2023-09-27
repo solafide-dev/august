@@ -7,8 +7,8 @@ import (
 )
 
 type Person struct {
-	Name string
-	Age  int
+	Name string `json:"name" yaml:"name"`
+	Age  int    `json:"age" yaml:"age"`
 }
 
 type Group struct {
@@ -17,9 +17,9 @@ type Group struct {
 }
 
 type Car struct {
-	Make  string
-	Model string
-	Year  int
+	Make  string `json:"make" yaml:"make"`
+	Model string `json:"model" yaml:"model"`
+	Year  int    `json:"year" yaml:"year"`
 }
 
 func main() {
@@ -29,8 +29,12 @@ func main() {
 		StorageDir: "./storage", // set the storage directory
 	})
 
+	dataStore.SetEventFunc(func(event, store, id string) {
+		log.Printf("Event: %s, Store: %s, ID: %s", event, store, id)
+	})
+
 	// Set a config after the initial init is done
-	dataStore.Register("people", &Group{})
+	dataStore.Register("people-group", &Group{})
 	dataStore.Register("cars", &Car{})
 
 	// Initialize the data store (this initializes any registered data stores, and loads any existing data)
@@ -39,30 +43,35 @@ func main() {
 	}
 
 	// Get a store
-	people, err := dataStore.GetStore("people")
+	peopleGroup, err := dataStore.GetStore("people-group")
 	if err != nil {
 		panic(err)
 	}
 
-	person := Person{
-		Name: "John Doe",
-		Age:  30,
+	group := Group{
+		Name: "Happy People",
+		Members: []Person{
+			{Name: "John Doe", Age: 30},
+		},
 	}
 
-	people.Set("john-doe", person)
+	peopleGroup.Set("happy-people", group)
 
 	// Get that person back
-	pGet, err := people.Get("john-doe")
-	p := pGet.(Person)
+	pGet, err := peopleGroup.Get("happy-people")
+	if err != nil {
+		panic(err)
+	}
+	p := pGet.(Group)
 	if err != nil {
 		panic(err)
 	}
 
-	newId, _ := people.New(person)
-	p2Get, _ := people.Get(newId)
-	p2 := p2Get.(Person)
+	newId, _ := peopleGroup.New(group)
+	p2Get, _ := peopleGroup.Get(newId)
+	p2 := p2Get.(Group)
 
-	log.Println("People:", people)
+	log.Println("Group:", group)
 	log.Printf("Person %s of type %T", p.Name, p)
 	log.Printf("Person2 %s of type %T", p2.Name, p2)
 

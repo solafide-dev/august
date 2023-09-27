@@ -13,10 +13,13 @@ import (
 
 var log *l.Logger
 
+type AugustEventFunc func(event, store, id string)
+
 type August struct {
 	storeRegistry map[string]interface{}
 	config        AugustConfig
 	storage       map[string]AugustStore
+	eventFunc     AugustEventFunc
 }
 
 type AugustConfigOption string
@@ -55,6 +58,7 @@ func Init(c ...AugustConfig) *August {
 		storeRegistry: stores,
 		config:        config,
 		storage:       storage,
+		eventFunc:     func(event, store, id string) {},
 	}
 
 	// if an AugustConfig is passed, override the default config with the set values
@@ -80,7 +84,11 @@ func Init(c ...AugustConfig) *August {
 	return a
 }
 
-func (a *August) Marhsal(input interface{}) ([]byte, error) {
+func (a *August) SetEventFunc(f AugustEventFunc) {
+	a.eventFunc = f
+}
+
+func (a *August) Marshal(input interface{}) ([]byte, error) {
 	switch a.config.Format {
 	case "json":
 		return json.MarshalIndent(input, "", "  ")
@@ -120,11 +128,46 @@ func (a *August) Register(name string, store interface{}) {
 	}
 }
 
+// Populate registry is used during initial startup to load any existing data.
+func (a *August) populateRegistry(name string) error {
+	if _, ok := a.storeRegistry[name]; !ok {
+		return fmt.Errorf("store %s does not exists", name)
+	}
+
+	// check the directory for files and load them
+	dir, err := os.ReadDir(a.config.StorageDir + "/" + name)
+	if err != nil {
+		return err
+	}
+
+	store := a.storage[name]
+
+	for _, file := range dir {
+		// skip invalid files
+		if file.IsDir() || file.Type().IsRegular() && file.Name()[len(file.Name())-len(a.config.Format):] != a.config.Format {
+			continue
+		}
+
+		id := file.Name()[:len(file.Name())-len(a.config.Format)-1]
+		log.Printf("Loading file: %s for registry %s as ID %s", file.Name(), name, id)
+		// read the file
+		store.LoadFromFile(id)
+	}
+	return nil
+}
+
 // After august is configured, load data and monitor local files.
 func (a *August) Run() error {
 	// initialize storage structure
 	if err := a.initStorage(); err != nil {
 		return err
+	}
+
+	// populate registry
+	for name, _ := range a.storeRegistry {
+		if err := a.populateRegistry(name); err != nil {
+			return err
+		}
 	}
 
 	return nil
