@@ -1,12 +1,17 @@
 package august
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	l "log"
 	"os"
 	"reflect"
+
+	"gopkg.in/yaml.v3"
 )
+
+var log *l.Logger
 
 type August struct {
 	storeRegistry map[string]interface{}
@@ -29,15 +34,19 @@ const (
 type AugustConfig struct {
 	StorageDir string // Storage directory for August to keep files.
 	Verbose    bool   // Enable logging.
+	Format     string
 }
 
 var defaultAugustConfig = AugustConfig{
 	StorageDir: "./storage",
 	Verbose:    false,
+	Format:     "json",
 }
 
 // Create a new August instance.
 func Init(c ...AugustConfig) *August {
+	log = l.New(os.Stdout, "[August] ", l.LstdFlags|l.Lshortfile)
+
 	stores := make(map[string]interface{})
 	config := defaultAugustConfig
 	storage := make(map[string]AugustStore)
@@ -54,7 +63,7 @@ func Init(c ...AugustConfig) *August {
 		values := reflect.ValueOf(c[0])
 		//types := values.Type()
 		for i := 0; i < values.NumField(); i++ {
-			if values.Field(i).Interface() != nil {
+			if values.Field(i).Interface() != nil && values.Field(i).Interface() != "" {
 				// update a.config with the new value
 				reflect.ValueOf(&a.config).Elem().Field(i).Set(values.Field(i))
 
@@ -63,13 +72,32 @@ func Init(c ...AugustConfig) *August {
 	}
 
 	if a.config.Verbose {
-		log.SetPrefix("[August] ")
 		log.Printf("August config: %+v", a.config)
 	} else {
 		log.SetOutput(io.Discard) // disable logging
 	}
 
 	return a
+}
+
+func (a *August) Marhsal(input interface{}) ([]byte, error) {
+	switch a.config.Format {
+	case "json":
+		return json.MarshalIndent(input, "", "  ")
+	case "yaml":
+		return yaml.Marshal(input)
+	}
+	return nil, fmt.Errorf("invalid format: %s", a.config.Format)
+}
+
+func (a *August) Unmarshal(input []byte, output interface{}) error {
+	switch a.config.Format {
+	case "json":
+		return json.Unmarshal(input, output)
+	case "yaml":
+		return yaml.Unmarshal(input, output)
+	}
+	return fmt.Errorf("invalid format: %s", a.config.Format)
 }
 
 func (a *August) GetStore(name string) (AugustStore, error) {

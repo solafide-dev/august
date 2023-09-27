@@ -58,7 +58,12 @@ func main() {
 		panic(err)
 	}
 
+	newId, _ := people.New(person)
+	p2Get, _ := people.Get(newId)
+	p2 := p2Get.(Person)
+
 	log.Println("People:", people)
 	log.Printf("Person %s of type %T", p.Name, p)
+	log.Printf("Person2 %s of type %T", p2.Name, p2)
 
 }
