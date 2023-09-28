@@ -1,6 +1,6 @@
 # August
 
-August is a persistant data storage library that is based around folders and flat files (JSON, YAML, XML, ect).
+August is a persistant data storage library that is based around folders and flat files (`JSON`, `YAML`, `XML`).
 
 Its main purpose is to provide a data store that prioritizes human readability and portability.
 
