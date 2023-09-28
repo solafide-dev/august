@@ -3,16 +3,23 @@ package august
 import (
 	"fmt"
 	"os"
+	"reflect"
+	"sync"
 	"unicode"
 
 	"github.com/google/uuid"
 )
 
+type AugustStoreDataset struct {
+	data interface{} // The data we are storing
+	lock *sync.Mutex // A lock to prevent concurrent writes to the data on disk
+}
+
 // an agust store represents individual data stores (folders) within the storage directory
 type AugustStore struct {
 	parent *August
 	name   string
-	data   map[string]interface{}
+	data   map[string]AugustStoreDataset
 }
 
 func (as *AugustStore) set(id string, val interface{}) error {
@@ -20,7 +27,17 @@ func (as *AugustStore) set(id string, val interface{}) error {
 		return err
 	}
 
-	(*as).data[id] = val
+	if _, ok := (*as).data[id]; !ok {
+		// create a new dataset
+		(*as).data[id] = AugustStoreDataset{
+			data: val,
+			lock: &sync.Mutex{},
+		}
+	}
+
+	dataSet := (*as).data[id]
+	dataSet.data = val
+	(*as).data[id] = dataSet
 
 	(*as).parent.eventFunc("set", (*as).name, id)
 
@@ -57,11 +74,24 @@ func (as *AugustStore) Get(id string) (interface{}, error) {
 	}
 
 	if val, ok := (*as).data[id]; ok {
-		// we have the value
-		return val, nil
+		// if the value is a pointer, we need to dereference it
+		if reflect.TypeOf(val.data).Kind() == reflect.Ptr {
+			return reflect.ValueOf(val.data).Elem().Interface(), nil
+		}
+		return val.data, nil
 	}
 
 	return nil, fmt.Errorf("no value found for id %s in store %s ", id, (*as).name)
+}
+
+// Get the lock from a dataset
+func (as *AugustStore) getLock(id string) *sync.Mutex {
+	if val, ok := (*as).data[id]; ok {
+		// we have the value
+		return val.lock
+	}
+
+	return &sync.Mutex{}
 }
 
 // Delete removes a value from the store by id.
@@ -89,17 +119,51 @@ func (as *AugustStore) Delete(id string) error {
 	return nil
 }
 
+// Get all the IDs in the store.
+func (as *AugustStore) GetIds() []string {
+	var ids []string
+	for id := range (*as).data {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // GetAll returns all values in the store.
 func (as *AugustStore) GetAll() (map[string]interface{}, error) {
 	if len((*as).data) == 0 {
 		return nil, fmt.Errorf("no data found for store: %s", (*as).name)
 	}
-	return (*as).data, nil
+
+	newSet := make(map[string]interface{})
+
+	for id, val := range (*as).data {
+		newSet[id] = val.data
+	}
+
+	return newSet, nil
+}
+
+// Purge will delete all of the data in a store.
+func (as *AugustStore) Purge() error {
+	for id := range (*as).data {
+		if err := as.Delete(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (as *AugustStore) LoadFromFile(id string) error {
 	if err := as.ValidateId(id); err != nil {
 		return err
+	}
+
+	dataG := reflect.New(as.parent.storeRegistry[as.name]).Interface()
+	data := dataG
+
+	(*as).data[id] = AugustStoreDataset{
+		data: data,
+		lock: &sync.Mutex{},
 	}
 
 	filename := fmt.Sprintf("%s/%s/%s.%s", (*as).parent.config.StorageDir, (*as).name, id, (*as).parent.config.Format)
@@ -111,14 +175,16 @@ func (as *AugustStore) LoadFromFile(id string) error {
 		return err
 	}
 
-	var iface interface{}
+	data2 := as.data[id]
+	data3 := data2.data
 
 	// unmarshal the file
-	if err := (*as).parent.Unmarshal(file, &iface); err != nil {
+	if err := as.parent.Unmarshal(file, data3); err != nil {
+		log.Printf("Error unmarshalling file: %s", err)
 		return err
 	}
 
-	return as.set(id, iface)
+	return nil
 }
 
 func (as *AugustStore) SaveToFile(id string) error {
@@ -134,6 +200,9 @@ func (as *AugustStore) SaveToFile(id string) error {
 	if err != nil {
 		return err
 	}
+
+	as.getLock(id).Lock()
+	defer as.getLock(id).Unlock()
 
 	// marshal the value
 	data, err := (*as).parent.Marshal(val)

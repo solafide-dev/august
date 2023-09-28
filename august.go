@@ -2,6 +2,7 @@ package august
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	l "log"
@@ -16,7 +17,7 @@ var log *l.Logger
 type AugustEventFunc func(event, store, id string)
 
 type August struct {
-	storeRegistry map[string]interface{}
+	storeRegistry map[string]reflect.Type
 	config        AugustConfig
 	storage       map[string]AugustStore
 	eventFunc     AugustEventFunc
@@ -50,7 +51,7 @@ var defaultAugustConfig = AugustConfig{
 func Init(c ...AugustConfig) *August {
 	log = l.New(os.Stdout, "[August] ", l.LstdFlags|l.Lshortfile)
 
-	stores := make(map[string]interface{})
+	stores := make(map[string]reflect.Type)
 	config := defaultAugustConfig
 	storage := make(map[string]AugustStore)
 
@@ -94,6 +95,8 @@ func (a *August) Marshal(input interface{}) ([]byte, error) {
 		return json.MarshalIndent(input, "", "  ")
 	case "yaml":
 		return yaml.Marshal(input)
+	case "xml":
+		return xml.MarshalIndent(input, "", "  ")
 	}
 	return nil, fmt.Errorf("invalid format: %s", a.config.Format)
 }
@@ -104,6 +107,8 @@ func (a *August) Unmarshal(input []byte, output interface{}) error {
 		return json.Unmarshal(input, output)
 	case "yaml":
 		return yaml.Unmarshal(input, output)
+	case "xml":
+		return xml.Unmarshal(input, output)
 	}
 	return fmt.Errorf("invalid format: %s", a.config.Format)
 }
@@ -119,12 +124,12 @@ func (a *August) GetStore(name string) (AugustStore, error) {
 // Register a store.
 func (a *August) Register(name string, store interface{}) {
 	log.Printf("Registering store: %s of type %T", name, store)
-	ifame := reflect.TypeOf(store)
-	a.storeRegistry[name] = ifame
+
+	a.storeRegistry[name] = reflect.TypeOf(store)
 	a.storage[name] = AugustStore{
 		name:   name,
 		parent: a,
-		data:   make(map[string]interface{}),
+		data:   make(map[string]AugustStoreDataset),
 	}
 }
 
