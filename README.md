@@ -13,8 +13,7 @@ Its initial conception was to provide a data store for the [SimpleWorship](https
     // Initialize August
     aug := august.Init()
 
-    // Set some configs
-    aug.Config(august.Config_FSNotify, true) // Disable fsnotify (default true)
+    // Set some configs (see below for available configs)
     aug.Config(august.Config_Format, "yaml") // Set the format to yaml (default json)
     aug.Config(august.Config_StorageDir, "./storage") // Set the storage directory (default ./storage)
 
@@ -74,6 +73,15 @@ Its initial conception was to provide a data store for the [SimpleWorship](https
     }
 
 ```
+
+## Available Configs
+
+| Config | Description | Default | Acceptable Values |
+| --- | --- | --- | --- |
+| Config_Format | The format to use for the data store files. | `json` | `json`, `yaml`, `xml` |
+| Config_StorageDir | The directory to store the data store files in. | `./storage` | Any valid directory path |
+| Config_FSNotify | Whether or not to use fsnotify to watch for changes to the data store files, and update the data store when they are modified | `true` | `true`, `false` |
+| Config_Verbose | Whether or not to log verbose output (consider calling `*August.Verbose()` after init instead) | `false` | `true`, `false` |
 
 ## Why the name August?
 
