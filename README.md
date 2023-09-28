@@ -46,7 +46,7 @@ Its initial conception was to provide a data store for the [SimpleWorship](https
         panic(err)
     }
 
-    // A a reference to the store
+    // Get a reference to the store
     people, err := aug.GetStore("people")
     if err != nil {
         panic(err)
