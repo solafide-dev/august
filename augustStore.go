@@ -27,8 +27,11 @@ func (as *AugustStore) set(id string, val interface{}) error {
 		return err
 	}
 
+	eventType := "update"
+
 	if _, ok := (*as).data[id]; !ok {
 		// create a new dataset
+		eventType = "create"
 		(*as).data[id] = AugustStoreDataset{
 			data: val,
 			lock: &sync.Mutex{},
@@ -39,7 +42,7 @@ func (as *AugustStore) set(id string, val interface{}) error {
 	dataSet.data = val
 	(*as).data[id] = dataSet
 
-	as.event("set", id)
+	as.event(eventType, id)
 
 	return nil
 }
@@ -51,7 +54,7 @@ func (as *AugustStore) Set(id string, val interface{}) error {
 		return err
 	}
 
-	err = as.SaveToFile(id)
+	err = as.saveToFile(id)
 	if err != nil {
 		return err
 	}
@@ -156,13 +159,20 @@ func (as *AugustStore) Purge() error {
 	return nil
 }
 
-func (as *AugustStore) LoadFromFile(id string) error {
+func (as *AugustStore) loadFromFile(id string) error {
 	if err := as.ValidateId(id); err != nil {
 		return err
 	}
 
 	dataG := reflect.New(as.parent.storeRegistry[as.name]).Interface()
 	data := dataG
+
+	eventType := "create"
+
+	if _, ok := (*as).data[id]; ok {
+		// We have this data already, so we are updating it
+		eventType = "update"
+	}
 
 	(*as).data[id] = AugustStoreDataset{
 		data: data,
@@ -178,21 +188,18 @@ func (as *AugustStore) LoadFromFile(id string) error {
 		return err
 	}
 
-	data2 := as.data[id]
-	data3 := data2.data
-
 	// unmarshal the file
-	if err := as.parent.Unmarshal(file, data3); err != nil {
+	if err := as.parent.Unmarshal(file, as.data[id].data); err != nil {
 		log.Printf("Error unmarshalling file: %s", err)
 		return err
 	}
 
-	as.event("set", id)
+	as.event(eventType, id)
 
 	return nil
 }
 
-func (as *AugustStore) SaveToFile(id string) error {
+func (as *AugustStore) saveToFile(id string) error {
 	if err := as.ValidateId(id); err != nil {
 		return err
 	}
@@ -237,6 +244,7 @@ func (as *AugustStore) ValidateId(id string) error {
 
 func (as *AugustStore) event(name string, id string) {
 	cacheName := fmt.Sprintf("%s::%s::%s", name, (*as).name, id)
+	log.Printf("[EVENT FIRED] %s", cacheName)
 	as.parent.systemModCache = append(as.parent.systemModCache, cacheName)
 	(*as).parent.eventFunc(name, (*as).name, id)
 }

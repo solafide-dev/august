@@ -165,7 +165,7 @@ func (a *August) populateRegistry(name string) error {
 		id := file.Name()[:len(file.Name())-len(a.config.Format)-1]
 		log.Printf("Loading file: %s for registry %s as ID %s", file.Name(), name, id)
 		// read the file
-		store.LoadFromFile(id)
+		store.loadFromFile(id)
 	}
 	return nil
 }
@@ -245,7 +245,7 @@ func (a *August) Run() error {
 							if eventType == "CREATE" || eventType == "WRITE" {
 								// this should be treated as data being updates
 								log.Printf("[FS Notify] File Modified: %s", file)
-								err := store.LoadFromFile(id)
+								err := store.loadFromFile(id)
 								if err != nil {
 									log.Println("error loading file:", err)
 									continue
