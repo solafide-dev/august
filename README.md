@@ -13,7 +13,7 @@ Its initial conception was to provide a data store for the [SimpleWorship](https
 aug := august.Init()
 
 // Set some configs (see below for available configs)
-aug.Config(august.Config_Format, "yaml") // Set the format to yaml (default json)
+aug.Config(august.Config_Format, "json") // Set the format to yaml (default json)
 aug.Config(august.Config_StorageDir, "./storage") // Set the storage directory (default ./storage)
 
 // Setup the optional event fuction. This is useful if you need to subscribe to
@@ -122,4 +122,4 @@ In the case of August, it is named after Saint Augustine of Hippo.
 
 Saint Augustine was a philosopher and theologian who lived from 354 to 430 AD. He is considered one of the most important figures in the development of Western Christianity and was a major figure in bringing Christianity to dominance in the previously pagan Roman Empire.
 
-![st-augustine-of-hippo-icon-703](https://github.com/solafide-dev/august/assets/262524/93d50e65-347d-4185-b635-30b7cf0d3986)
+![augustine-of-hippo](https://github.com/solafide-dev/august/assets/262524/f381eb80-7ec1-48b7-ad37-cdf1754a080d)
