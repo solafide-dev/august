@@ -19,10 +19,11 @@ var log *l.Logger
 type AugustEventFunc func(event, store, id string)
 
 type August struct {
-	storeRegistry map[string]reflect.Type
-	config        AugustConfig
-	storage       map[string]AugustStore
-	eventFunc     AugustEventFunc
+	storeRegistry  map[string]reflect.Type // A map registrying the store types
+	config         AugustConfig            // August configuration
+	storage        map[string]AugustStore  // A map of all the stores
+	eventFunc      AugustEventFunc         // A function to call when an event happens
+	systemModCache []string                // Every time we modify a file, we add info about it so that FSNotify doesn't trigger on it
 }
 
 type AugustConfigOption string
@@ -62,19 +63,22 @@ func Init() *August {
 	storage := make(map[string]AugustStore)
 
 	a := &August{
-		storeRegistry: stores,
-		config:        config,
-		storage:       storage,
-		eventFunc:     func(event, store, id string) {},
+		storeRegistry:  stores,
+		config:         config,
+		storage:        storage,
+		eventFunc:      func(event, store, id string) {},
+		systemModCache: []string{},
 	}
 
 	return a
 }
 
+// Enable verbose logging.
 func (a *August) Verbose() {
 	log.SetOutput(os.Stdout)
 }
 
+// Set a config option.
 func (a *August) Config(k AugustConfigOption, v interface{}) {
 	log.Printf("Setting config: %s to %v", k, v)
 
@@ -217,22 +221,30 @@ func (a *August) Run() error {
 							// now we should have group/id -- we need to split that
 							parts := strings.Split(nameAndId, "/")
 							if len(parts) != 2 {
-								log.Println("invalid file change event:", eventType, file)
+								log.Println("[FS Notify] invalid file change event:", eventType, file)
 								continue
 							}
 
 							storeName := parts[0]
 							id := parts[1]
+							method := "set"
+							if eventType == "REMOVE" || eventType == "RENAME" {
+								method = "delete"
+							}
+
+							if a.handleModCacheSkip(method, storeName, id) {
+								continue
+							}
 
 							store, err := a.GetStore(storeName)
 							if err != nil {
-								log.Println("error getting store:", err)
+								log.Println("[FS Notify] error getting store:", err)
 								continue
 							}
 
 							if eventType == "CREATE" || eventType == "WRITE" {
-								log.Println("\n\n", event.Op.String(), id, "\n\n")
 								// this should be treated as data being updates
+								log.Printf("[FS Notify] File Modified: %s", file)
 								err := store.LoadFromFile(id)
 								if err != nil {
 									log.Println("error loading file:", err)
@@ -241,9 +253,8 @@ func (a *August) Run() error {
 							}
 
 							if eventType == "REMOVE" || eventType == "RENAME" {
-								log.Println("\n\n", event.Op.String(), id, "\n\n")
 								// These both should be treated as data being deleted
-								log.Printf("Deleting file: %s", file)
+								log.Printf("[FS Notify] File Deleted: %s", file)
 								err := store.Delete(id)
 								if err != nil {
 									log.Println("error deleting file:", err)
@@ -282,6 +293,20 @@ func (a *August) Run() error {
 	}
 
 	return nil
+}
+
+// A weird function to check if the mod cache contains a string representing the action
+// detected, and returns true + deletes the entry if it does.
+func (a *August) handleModCacheSkip(method, name, id string) bool {
+	cacheName := fmt.Sprintf("%s::%s::%s", method, name, id)
+	for i, v := range a.systemModCache {
+		if v == cacheName {
+			log.Printf("[FS Notify] Found %s, skipping FS modify actions", cacheName)
+			a.systemModCache = append(a.systemModCache[:i], a.systemModCache[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 func (a *August) initStorage() error {

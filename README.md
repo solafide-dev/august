@@ -2,7 +2,9 @@
 
 August is a persistant data storage library that is based around folders and flat files (JSON, YAML, XML, ect).
 
-Its main purpose is to provide a data store that is human readable and interactable, at the cost of speed and size.
+Its main purpose is to provide a data store that prioritizes human readability and portability.
+
+Its initial conception was to provide a data store for the [SimpleWorship](https://github.com/solafide-dev/simpleworship) software, since data sets won't be massive there, but human readability and portability are important.
 
 ## CURRENT ISSUES
 

@@ -236,6 +236,8 @@ func (as *AugustStore) ValidateId(id string) error {
 }
 
 func (as *AugustStore) event(name string, id string) {
+	cacheName := fmt.Sprintf("%s::%s::%s", name, (*as).name, id)
+	as.parent.systemModCache = append(as.parent.systemModCache, cacheName)
 	(*as).parent.eventFunc(name, (*as).name, id)
 }
 
