@@ -22,19 +22,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  copy-file:
+  copy:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v2
-    - name: Pushes test file
-      uses: dmnemec/copy_file_to_another_repo_action@main
-      env:
-        API_TOKEN_GITHUB: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        source_file: 'README.md'
-        destination_repo: 'solafide-dev/solafide-dev.github.io'
-        destination_folder: '/packages/august'
-        user_email: 'cameronchunn@gmail.com'
-        user_name: 'applehat'
-        commit_message: 'Update README for August'
+      - uses: actions/checkout@v2
+      - name: Copy Readme
+        run:  mkdir readme && cp README.md ./readme/README.md
+      - name: Pushes to another repository
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          source-directory: 'readme'
+          destination-github-username: 'solafide-dev'
+          destination-repository-name: 'solafide-dev.github.io'
+          user-email: carles3@pina.cat
+          target-branch: main
+          target-directory: '/packages/august/copied-readme/'
