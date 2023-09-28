@@ -8,7 +8,9 @@ import (
 	l "log"
 	"os"
 	"reflect"
+	"strings"
 
+	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,6 +34,9 @@ func (c AugustConfigOption) String() string {
 const (
 	// Storage directory for August to keep files.
 	Config_StorageDir AugustConfigOption = "StorageDir"
+	Config_Verbose    AugustConfigOption = "Verbose"
+	Config_Format     AugustConfigOption = "Format"
+	Config_FSNotify   AugustConfigOption = "FSNotify"
 )
 
 // AugustConfig stores basic configuration for August.
@@ -39,20 +44,21 @@ type AugustConfig struct {
 	StorageDir string // Storage directory for August to keep files.
 	Verbose    bool   // Enable logging.
 	Format     string
-}
-
-var defaultAugustConfig = AugustConfig{
-	StorageDir: "./storage",
-	Verbose:    false,
-	Format:     "json",
+	FSNotify   bool
 }
 
 // Create a new August instance.
-func Init(c ...AugustConfig) *August {
+func Init() *August {
 	log = l.New(os.Stdout, "[August] ", l.LstdFlags|l.Lshortfile)
+	log.SetOutput(io.Discard) // disable logging by default
 
 	stores := make(map[string]reflect.Type)
-	config := defaultAugustConfig
+	config := AugustConfig{
+		StorageDir: "./storage",
+		Verbose:    false,
+		Format:     "json",
+		FSNotify:   true,
+	}
 	storage := make(map[string]AugustStore)
 
 	a := &August{
@@ -62,33 +68,30 @@ func Init(c ...AugustConfig) *August {
 		eventFunc:     func(event, store, id string) {},
 	}
 
-	// if an AugustConfig is passed, override the default config with the set values
-	if len(c) > 0 {
-
-		values := reflect.ValueOf(c[0])
-		//types := values.Type()
-		for i := 0; i < values.NumField(); i++ {
-			if values.Field(i).Interface() != nil && values.Field(i).Interface() != "" {
-				// update a.config with the new value
-				reflect.ValueOf(&a.config).Elem().Field(i).Set(values.Field(i))
-
-			}
-		}
-	}
-
-	if a.config.Verbose {
-		log.Printf("August config: %+v", a.config)
-	} else {
-		log.SetOutput(io.Discard) // disable logging
-	}
-
 	return a
+}
+
+func (a *August) Verbose() {
+	log.SetOutput(os.Stdout)
+}
+
+func (a *August) Config(k AugustConfigOption, v interface{}) {
+	log.Printf("Setting config: %s to %v", k, v)
+
+	if k == Config_Verbose && v.(bool) {
+		// set verbose mode if we configure that
+		a.Verbose()
+	}
+
+	reflect.ValueOf(&a.config).Elem().FieldByName(k.String()).Set(reflect.ValueOf(v))
+	log.Printf("Config: %+v", a.config)
 }
 
 func (a *August) SetEventFunc(f AugustEventFunc) {
 	a.eventFunc = f
 }
 
+// Marshal an interface into the configured format.
 func (a *August) Marshal(input interface{}) ([]byte, error) {
 	switch a.config.Format {
 	case "json":
@@ -101,6 +104,7 @@ func (a *August) Marshal(input interface{}) ([]byte, error) {
 	return nil, fmt.Errorf("invalid format: %s", a.config.Format)
 }
 
+// Unmarshal an interface from the configured format.
 func (a *August) Unmarshal(input []byte, output interface{}) error {
 	switch a.config.Format {
 	case "json":
@@ -113,11 +117,12 @@ func (a *August) Unmarshal(input []byte, output interface{}) error {
 	return fmt.Errorf("invalid format: %s", a.config.Format)
 }
 
-func (a *August) GetStore(name string) (AugustStore, error) {
+// Get a store by name.
+func (a *August) GetStore(name string) (*AugustStore, error) {
 	if store, ok := a.storage[name]; ok {
-		return store, nil
+		return &store, nil
 	} else {
-		return AugustStore{}, fmt.Errorf("data store %s not found", name)
+		return &AugustStore{}, fmt.Errorf("data store %s not found", name)
 	}
 }
 
@@ -173,6 +178,107 @@ func (a *August) Run() error {
 		if err := a.populateRegistry(name); err != nil {
 			return err
 		}
+	}
+
+	if a.config.FSNotify {
+		go func() {
+			log.Println("Starting FSNotify watcher...")
+			// We are going to watch the storage directory for changes
+			watcher, err := fsnotify.NewWatcher()
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer watcher.Close()
+
+			// Start listening for events.
+			go func() {
+				for {
+					select {
+					case event, ok := <-watcher.Events:
+						if !ok {
+							return
+						}
+						eventType := event.Op.String()
+						log.Println("event:", eventType, event.Name)
+						if eventType == "WRITE" || eventType == "RENAME" || eventType == "CREATE" || eventType == "REMOVE" {
+							// make sure names are normalized for windows systems
+							file := strings.Replace(event.Name, `\\`, `/`, -1)
+							file = strings.Replace(file, `\`, `/`, -1)
+
+							// we need to parse the file changes to see what data needs to be updated
+
+							storageDir := a.config.StorageDir + "/"
+							if strings.HasPrefix(storageDir, "./") {
+								storageDir = strings.Replace(storageDir, "./", "", 1)
+							}
+
+							nameAndId := strings.Replace(file, storageDir, "", 1)
+							nameAndId = strings.Replace(nameAndId, "."+a.config.Format, "", 1)
+							// now we should have group/id -- we need to split that
+							parts := strings.Split(nameAndId, "/")
+							if len(parts) != 2 {
+								log.Println("invalid file change event:", eventType, file)
+								continue
+							}
+
+							storeName := parts[0]
+							id := parts[1]
+
+							store, err := a.GetStore(storeName)
+							if err != nil {
+								log.Println("error getting store:", err)
+								continue
+							}
+
+							if eventType == "CREATE" || eventType == "WRITE" {
+								log.Println("\n\n", event.Op.String(), id, "\n\n")
+								// this should be treated as data being updates
+								err := store.LoadFromFile(id)
+								if err != nil {
+									log.Println("error loading file:", err)
+									continue
+								}
+							}
+
+							if eventType == "REMOVE" || eventType == "RENAME" {
+								log.Println("\n\n", event.Op.String(), id, "\n\n")
+								// These both should be treated as data being deleted
+								log.Printf("Deleting file: %s", file)
+								err := store.Delete(id)
+								if err != nil {
+									log.Println("error deleting file:", err)
+									continue
+								}
+							}
+
+						} else {
+							log.Println("ignored file change event:", eventType, event.Name)
+							continue
+						}
+
+					case err, ok := <-watcher.Errors:
+						if !ok {
+							return
+						}
+						log.Println("error:", err)
+					}
+				}
+			}()
+
+			for name, _ := range a.storeRegistry {
+				// create directory for each store
+				dir := a.config.StorageDir + "/" + name
+				if err := watcher.Add(dir); err != nil {
+					log.Fatal(err)
+				}
+			}
+
+			// Block until an error occurs.
+			err = <-watcher.Errors
+			if err != nil {
+				log.Fatal(err)
+			}
+		}()
 	}
 
 	return nil

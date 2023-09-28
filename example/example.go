@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/solafide-dev/august"
 )
@@ -18,26 +19,39 @@ type Group struct {
 
 func main() {
 
-	dataStore := august.Init(august.AugustConfig{
-		Verbose:    true,        // enable logging
-		StorageDir: "./storage", // set the storage directory
-		Format:     "json",      // set the default format for data stores
-	})
+	aug := august.Init()
+	aug.Verbose()
 
-	dataStore.SetEventFunc(func(event, store, id string) {
-		log.Printf("Storage Event Fired: %s, Store: %s, ID: %s", event, store, id)
+	// aug.Config(august.Config_FSNotify, false) // Disable fsnotify (default true)
+	// aug.Config(august.Config_Format, "yaml") // Set the format to yaml (default json)
+	// aug.Config(august.Config_StorageDir, "./storage") // Set the storage directory (default ./storage)
+
+	// Set an event function allows you to subscripe to events that happen in the data store
+	// This is especially useful if you are using fsnotify, as your store may be mutated
+	// without you realizing it by another process.
+	aug.SetEventFunc(func(event, store, id string) {
+		switch event {
+		case "set":
+			log.Printf("[DATA STORAGE] SET:%s:%s", store, id)
+			store, _ := aug.GetStore(store)
+			data, _ := store.Get(id)
+			log.Printf("[DATA STORAGE] %s", data)
+		case "delete":
+			log.Printf("[DATA STORAGE] DELETE:%s:%s", store, id)
+
+		}
 	})
 
 	// Set a config after the initial init is done
-	dataStore.Register("people-group", Group{})
+	aug.Register("people-group", Group{})
 
 	// Initialize the data store (this initializes any registered data stores, and loads any existing data)
-	if err := dataStore.Run(); err != nil {
+	if err := aug.Run(); err != nil {
 		panic(err)
 	}
 
 	// Get a store
-	peopleGroup, err := dataStore.GetStore("people-group")
+	peopleGroup, err := aug.GetStore("people-group")
 	if err != nil {
 		panic(err)
 	}
@@ -62,11 +76,23 @@ func main() {
 
 	log.Printf("Group: %+v", p)
 
-	// Generate a new people group with an auto-generated ID
-	//newId, _ := peopleGroup.New(group)
-	//p2, _ := peopleGroup.Get(newId)
+	group2 := Group{
+		Name: "Silly People",
+		Members: []Person{
+			{Name: "John Clown", Age: 30},
+			{Name: "Jane Clown", Age: 28},
+		},
+	}
 
-	//log.Printf("Group2: %+v", p2)
+	// Generate a new people group with an auto-generated ID
+	newId, _ := peopleGroup.New(group2)
+	log.Printf("New ID: %s", newId)
+
+	// Update Jane Clown to be 29
+	janeClown, _ := peopleGroup.Get(newId)
+	janeClown.(Group).Members[1].Age = 29
+
+	peopleGroup.Set(newId, janeClown)
 
 	// Get all the defined IDS
 	ids := peopleGroup.GetIds()
@@ -76,6 +102,11 @@ func main() {
 		groupG, _ := peopleGroup.Get(id)
 		group := groupG
 		log.Printf("Group (%T): %+v", group, group)
+	}
+
+	// Keep going forever so we can see the fsnotify events
+	for {
+		time.Sleep(1 * time.Second)
 	}
 
 }

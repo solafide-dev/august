@@ -39,7 +39,7 @@ func (as *AugustStore) set(id string, val interface{}) error {
 	dataSet.data = val
 	(*as).data[id] = dataSet
 
-	(*as).parent.eventFunc("set", (*as).name, id)
+	as.event("set", id)
 
 	return nil
 }
@@ -105,16 +105,19 @@ func (as *AugustStore) Delete(id string) error {
 	}
 
 	// remove the file
-	filename := fmt.Sprintf("%s/%s/%s.%s", (*as).parent.config.StorageDir, (*as).name, id, (*as).parent.config.Format)
-	log.Printf("Deleting file: %s", filename)
+	filename := as.filename(id)
 	if err := os.Remove(filename); err != nil {
-		return err
+		// if we can't find the file, delete might have been triggered by an FSNotify delete event
+		if !os.IsNotExist(err) {
+			return err
+		}
+		log.Printf("Deleted file: %s", filename)
 	}
 
 	// delete the value from the store
 	delete((*as).data, id)
 
-	(*as).parent.eventFunc("delete", (*as).name, id)
+	as.event("delete", id)
 
 	return nil
 }
@@ -166,7 +169,7 @@ func (as *AugustStore) LoadFromFile(id string) error {
 		lock: &sync.Mutex{},
 	}
 
-	filename := fmt.Sprintf("%s/%s/%s.%s", (*as).parent.config.StorageDir, (*as).name, id, (*as).parent.config.Format)
+	filename := as.filename(id)
 	log.Printf("Loading file: %s", filename)
 
 	// read the file
@@ -184,6 +187,8 @@ func (as *AugustStore) LoadFromFile(id string) error {
 		return err
 	}
 
+	as.event("set", id)
+
 	return nil
 }
 
@@ -192,7 +197,7 @@ func (as *AugustStore) SaveToFile(id string) error {
 		return err
 	}
 
-	filename := fmt.Sprintf("%s/%s/%s.%s", (*as).parent.config.StorageDir, (*as).name, id, (*as).parent.config.Format)
+	filename := as.filename(id)
 	log.Printf("Saving file: %s", filename)
 
 	// get the value
@@ -228,4 +233,12 @@ func (as *AugustStore) ValidateId(id string) error {
 	}
 
 	return nil
+}
+
+func (as *AugustStore) event(name string, id string) {
+	(*as).parent.eventFunc(name, (*as).name, id)
+}
+
+func (as *AugustStore) filename(id string) string {
+	return fmt.Sprintf("%s/%s/%s.%s", (*as).parent.config.StorageDir, (*as).name, id, (*as).parent.config.Format)
 }

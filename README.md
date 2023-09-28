@@ -4,6 +4,12 @@ August is a persistant data storage library that is based around folders and fla
 
 Its main purpose is to provide a data store that is human readable and interactable, at the cost of speed and size.
 
+## CURRENT ISSUES
+
+FSNotify will report, and take actions, on changes initiated by the application.
+
+Need to figure out a way to stop that from happening on application file actions, and only monitor external ones.
+
 ## Usage
 
 For a full example of usage, see the [example](example) folder.
