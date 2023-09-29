@@ -120,6 +120,7 @@ At Sola Fide, we like for anything we make to echo our Christianity, as all the 
 
 In the case of August, it is named after Saint Augustine of Hippo.
 
+
 Saint Augustine was a philosopher and theologian who lived from 354 to 430 AD. He is considered one of the most important figures in the development of Western Christianity and was a major figure in bringing Christianity to dominance in the previously pagan Roman Empire.
 
 ![augustine-of-hippo](https://github.com/solafide-dev/august/assets/262524/f381eb80-7ec1-48b7-ad37-cdf1754a080d)
