@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
@@ -19,6 +20,7 @@ var log *l.Logger
 type AugustEventFunc func(event, store, id string)
 
 type August struct {
+	mu             sync.RWMutex
 	storeRegistry  map[string]reflect.Type // A map registrying the store types
 	config         AugustConfig            // August configuration
 	storage        map[string]AugustStore  // A map of all the stores
@@ -80,6 +82,8 @@ func (a *August) Verbose() {
 
 // Set a config option.
 func (a *August) Config(k AugustConfigOption, v interface{}) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	log.Printf("Setting config: %s to %v", k, v)
 
 	if k == Config_Verbose && v.(bool) {
@@ -92,6 +96,8 @@ func (a *August) Config(k AugustConfigOption, v interface{}) {
 }
 
 func (a *August) SetEventFunc(f AugustEventFunc) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.eventFunc = f
 }
 
@@ -123,6 +129,8 @@ func (a *August) Unmarshal(input []byte, output interface{}) error {
 
 // Get a store by name.
 func (a *August) GetStore(name string) (*AugustStore, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if store, ok := a.storage[name]; ok {
 		return &store, nil
 	} else {
@@ -132,6 +140,8 @@ func (a *August) GetStore(name string) (*AugustStore, error) {
 
 // Register a store.
 func (a *August) Register(name string, store interface{}) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	log.Printf("Registering store: %s of type %T", name, store)
 
 	a.storeRegistry[name] = reflect.TypeOf(store)
@@ -144,6 +154,8 @@ func (a *August) Register(name string, store interface{}) {
 
 // Populate registry is used during initial startup to load any existing data.
 func (a *August) populateRegistry(name string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if _, ok := a.storeRegistry[name]; !ok {
 		return fmt.Errorf("store %s does not exists", name)
 	}

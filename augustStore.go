@@ -11,8 +11,8 @@ import (
 )
 
 type AugustStoreDataset struct {
-	data interface{} // The data we are storing
-	lock *sync.Mutex // A lock to prevent concurrent writes to the data on disk
+	data interface{}   // The data we are storing
+	lock *sync.RWMutex // A lock to prevent concurrent writes to the data on disk
 }
 
 // an agust store represents individual data stores (folders) within the storage directory
@@ -23,9 +23,13 @@ type AugustStore struct {
 }
 
 func (as *AugustStore) set(id string, val interface{}) error {
+
 	if err := as.ValidateId(id); err != nil {
 		return err
 	}
+
+	as.getLock(id).Lock()
+	defer as.getLock(id).Unlock()
 
 	eventType := "update"
 
@@ -34,7 +38,7 @@ func (as *AugustStore) set(id string, val interface{}) error {
 		eventType = "create"
 		(*as).data[id] = AugustStoreDataset{
 			data: val,
-			lock: &sync.Mutex{},
+			lock: &sync.RWMutex{},
 		}
 	}
 
@@ -72,6 +76,8 @@ func (as *AugustStore) New(val interface{}) (string, error) {
 
 // Get retrieves a value from the store by id.
 func (as *AugustStore) Get(id string) (interface{}, error) {
+	as.getLock(id).RLock()
+	defer as.getLock(id).RUnlock()
 	if err := as.ValidateId(id); err != nil {
 		return nil, err
 	}
@@ -88,17 +94,20 @@ func (as *AugustStore) Get(id string) (interface{}, error) {
 }
 
 // Get the lock from a dataset
-func (as *AugustStore) getLock(id string) *sync.Mutex {
+func (as *AugustStore) getLock(id string) *sync.RWMutex {
 	if val, ok := (*as).data[id]; ok {
 		// we have the value
 		return val.lock
 	}
 
-	return &sync.Mutex{}
+	return &sync.RWMutex{}
 }
 
 // Delete removes a value from the store by id.
 func (as *AugustStore) Delete(id string) error {
+	as.getLock(id).Lock()
+	defer as.getLock(id).Unlock()
+
 	if err := as.ValidateId(id); err != nil {
 		return err
 	}
@@ -127,6 +136,7 @@ func (as *AugustStore) Delete(id string) error {
 
 // Get all the IDs in the store.
 func (as *AugustStore) GetIds() []string {
+
 	var ids []string
 	for id := range (*as).data {
 		ids = append(ids, id)
@@ -136,6 +146,7 @@ func (as *AugustStore) GetIds() []string {
 
 // GetAll returns all values in the store.
 func (as *AugustStore) GetAll() (map[string]interface{}, error) {
+
 	if len((*as).data) == 0 {
 		return nil, fmt.Errorf("no data found for store: %s", (*as).name)
 	}
@@ -143,6 +154,8 @@ func (as *AugustStore) GetAll() (map[string]interface{}, error) {
 	newSet := make(map[string]interface{})
 
 	for id, val := range (*as).data {
+		as.getLock(id).RLock()
+		defer as.getLock(id).RUnlock()
 		newSet[id] = val.data
 	}
 
@@ -176,7 +189,7 @@ func (as *AugustStore) loadFromFile(id string) error {
 
 	(*as).data[id] = AugustStoreDataset{
 		data: data,
-		lock: &sync.Mutex{},
+		lock: &sync.RWMutex{},
 	}
 
 	filename := as.filename(id)
