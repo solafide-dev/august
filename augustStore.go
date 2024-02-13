@@ -17,19 +17,19 @@ type AugustStoreDataset struct {
 
 // an agust store represents individual data stores (folders) within the storage directory
 type AugustStore struct {
+	mu     sync.RWMutex
 	parent *August
 	name   string
 	data   map[string]AugustStoreDataset
 }
 
 func (as *AugustStore) set(id string, val interface{}) error {
+	as.mu.Lock()
+	defer as.mu.Unlock()
 
 	if err := as.ValidateId(id); err != nil {
 		return err
 	}
-
-	as.getLock(id).Lock()
-	defer as.getLock(id).Unlock()
 
 	eventType := "update"
 
@@ -76,8 +76,8 @@ func (as *AugustStore) New(val interface{}) (string, error) {
 
 // Get retrieves a value from the store by id.
 func (as *AugustStore) Get(id string) (interface{}, error) {
-	as.getLock(id).RLock()
-	defer as.getLock(id).RUnlock()
+	as.mu.RLock()
+	defer as.mu.RUnlock()
 	if err := as.ValidateId(id); err != nil {
 		return nil, err
 	}
@@ -93,20 +93,10 @@ func (as *AugustStore) Get(id string) (interface{}, error) {
 	return nil, fmt.Errorf("no value found for id %s in store %s ", id, (*as).name)
 }
 
-// Get the lock from a dataset
-func (as *AugustStore) getLock(id string) *sync.RWMutex {
-	if val, ok := (*as).data[id]; ok {
-		// we have the value
-		return val.lock
-	}
-
-	return &sync.RWMutex{}
-}
-
 // Delete removes a value from the store by id.
 func (as *AugustStore) Delete(id string) error {
-	as.getLock(id).Lock()
-	defer as.getLock(id).Unlock()
+	as.mu.Lock()
+	defer as.mu.Unlock()
 
 	if err := as.ValidateId(id); err != nil {
 		return err
@@ -154,8 +144,8 @@ func (as *AugustStore) GetAll() (map[string]interface{}, error) {
 	newSet := make(map[string]interface{})
 
 	for id, val := range (*as).data {
-		as.getLock(id).RLock()
-		defer as.getLock(id).RUnlock()
+		as.mu.RLock()
+		defer as.mu.RUnlock()
 		newSet[id] = val.data
 	}
 
@@ -226,8 +216,8 @@ func (as *AugustStore) saveToFile(id string) error {
 		return err
 	}
 
-	as.getLock(id).Lock()
-	defer as.getLock(id).Unlock()
+	as.mu.Lock()
+	defer as.mu.Unlock()
 
 	// marshal the value
 	data, err := (*as).parent.Marshal(val)
